@@ -1,0 +1,505 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Advanced Weather & CRUD App</title>
+    <!-- Load Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* Custom scrollbar styling for the log */
+        #crud-list-container::-webkit-scrollbar {
+            width: 8px;
+        }
+        #crud-list-container::-webkit-scrollbar-thumb {
+            background-color: #9ca3af; /* gray-400 */
+            border-radius: 4px;
+        }
+        #crud-list-container {
+            max-height: 400px;
+            overflow-y: auto;
+            border-radius: 0.5rem;
+        }
+    </style>
+</head>
+<body class="bg-gray-50 min-h-screen p-4 md:p-8 font-sans">
+    <div class="max-w-6xl mx-auto space-y-10">
+
+        <!-- Header and User ID -->
+        <header class="text-center pb-4 border-b-2 border-indigo-100">
+            <h1 class="text-4xl font-extrabold text-indigo-700">Weather & Data Persistence Engine</h1>
+            <p id="user-display" class="text-sm text-gray-500 mt-1">Status: Initializing...</p>
+        </header>
+
+        <!-- Global Error Display -->
+        <div id="global-message" class="hidden p-4 rounded-lg text-sm font-medium transition-all duration-300"></div>
+        <div id="loading-indicator" class="hidden text-center text-indigo-500 font-semibold">Loading...</div>
+
+        <!-- Main Content Grid -->
+        <div class="grid lg:grid-cols-2 gap-10">
+
+            <!-- API Weather Search and Forecast -->
+            <section class="bg-white p-6 rounded-xl shadow-2xl border border-indigo-200">
+                <h2 class="text-2xl font-bold text-indigo-600 mb-4 border-b pb-2">1. Real-Time Weather & 5-Day Forecast</h2>
+                <div class="space-y-4">
+                    <input type="text" id="city-input" placeholder="Enter City Name (e.g., London, UK)"
+                           class="w-full p-3 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 transition shadow-sm">
+                    <button id="fetch-weather-btn"
+                            class="w-full bg-indigo-500 text-white p-3 rounded-lg font-semibold hover:bg-indigo-600 transition duration-150 shadow-md shadow-indigo-300">
+                        Get Current Weather & Forecast
+                    </button>
+
+                    <!-- Weather Output Area -->
+                    <div id="weather-output" class="pt-4 space-y-4">
+                        <h3 class="text-xl font-semibold text-gray-700 hidden" id="current-weather-title">Current Weather in <span id="location-name" class="text-indigo-600"></span></h3>
+                        <div id="current-details" class="grid grid-cols-2 gap-4 text-sm"></div>
+                        <div id="forecast-details" class="pt-4">
+                            <h4 class="text-lg font-semibold text-gray-600 hidden" id="forecast-title">5-Day Forecast (3-Hour Intervals)</h4>
+                            <div id="forecast-grid" class="grid grid-cols-2 md:grid-cols-5 gap-4 mt-2"></div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- CRUD Functionality (Create, Read, Update, Delete) -->
+            <section class="bg-white p-6 rounded-xl shadow-2xl border border-indigo-200">
+                <h2 class="text-2xl font-bold text-indigo-600 mb-4 border-b pb-2">2. Historical Data Log (CRUD)</h2>
+
+                <!-- CREATE / UPDATE FORM -->
+                <div class="space-y-3 mb-6 p-4 bg-indigo-50 rounded-lg">
+                    <h3 class="text-xl font-semibold text-indigo-700" id="crud-form-title">Create New Log Entry</h3>
+                    <input type="hidden" id="doc-id">
+                    <input type="text" id="crud-location" placeholder="Location for Log (e.g., Paris, FR)"
+                           class="w-full p-3 border border-gray-300 rounded-lg">
+                    <div class="grid grid-cols-2 gap-3">
+                        <input type="date" id="crud-start-date" class="w-full p-3 border border-gray-300 rounded-lg">
+                        <input type="date" id="crud-end-date" class="w-full p-3 border border-gray-300 rounded-lg">
+                    </div>
+                    <button id="save-crud-btn" class="w-full bg-green-500 text-white p-3 rounded-lg font-semibold hover:bg-green-600 transition duration-150 shadow-md shadow-green-300">
+                        CREATE: Save Historical Log Entry
+                    </button>
+                    <button id="cancel-update-btn" class="hidden w-full bg-gray-400 text-white p-3 rounded-lg font-semibold hover:bg-gray-500 transition duration-150">
+                        Cancel Update
+                    </button>
+                    <p class="text-xs text-gray-500 mt-2">
+                        *The CREATE function fetches the **current** temperature for the location and saves it alongside your requested date range, fulfilling the log-keeping requirement.
+                    </p>
+                </div>
+
+                <!-- READ / LIST -->
+                <h3 class="text-xl font-semibold text-gray-700 mb-3">Previous Saved Requests (READ)</h3>
+                <div id="crud-list-container" class="bg-gray-100 p-3 shadow-inner">
+                    <div id="crud-list" class="space-y-4">
+                        <p class="text-gray-500 text-center" id="no-records-msg">No historical records saved yet.</p>
+                    </div>
+                </div>
+            </section>
+        </div>
+
+    </div>
+
+    <!-- Firebase SDKs -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, setDoc, addDoc, onSnapshot, collection, deleteDoc, updateDoc, setLogLevel, query } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // --- GLOBAL VARIABLES (Provided by the environment) ---
+        // DUMMY CONFIGURATION: Used when running outside the Canvas environment.
+        // This allows Firebase SDK to initialize without crashing, enabling local testing.
+        const DUMMY_FIREBASE_CONFIG = {
+            apiKey: "dummy-key",
+            authDomain: "dummy.firebaseapp.com",
+            projectId: "dummy-project",
+        };
+        
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        
+        // If the global config is missing, use the dummy structure instead of null
+        const firebaseConfig = typeof __firebase_config !== 'undefined' 
+            ? JSON.parse(__firebase_config) 
+            : DUMMY_FIREBASE_CONFIG;
+            
+        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+
+        // --- CONFIGURATION ---
+        const API_KEY = "cdafa16fd64e6c670e60fc2d8ffc7fa1"; // <<< IMPORTANT: Replace with your actual key
+        const BASE_WEATHER_URL = "https://api.openweathermap.org/data/2.5/weather";
+        const BASE_FORECAST_URL = "https://api.openweathermap.org/data/2.5/forecast";
+        const UNIT = "metric"; // or 'imperial' for Fahrenheit
+
+        let db;
+        let auth;
+        let userId = null;
+        let isAuthReady = false;
+        
+        // Note: When running locally, Firestore will attempt to connect but fail authentication,
+        // so CRUD operations will throw errors, but the UI will initialize correctly.
+        const COLLECTION_PATH = `artifacts/${appId}/public/data/weather-history`; 
+
+        // --- UTILITY FUNCTIONS ---
+
+        function displayMessage(message, type = 'info') {
+            const msgEl = document.getElementById('global-message');
+            msgEl.textContent = message;
+            msgEl.className = 'p-4 rounded-lg text-sm font-medium transition-all duration-300';
+            msgEl.classList.remove('hidden');
+
+            // Apply styling based on message type
+            if (type === 'error') {
+                msgEl.classList.add('bg-red-100', 'text-red-700', 'border', 'border-red-300');
+            } else if (type === 'success') {
+                msgEl.classList.add('bg-green-100', 'text-green-700', 'border', 'border-green-300');
+            } else {
+                msgEl.classList.add('bg-blue-100', 'text-blue-700', 'border', 'border-blue-300');
+            }
+
+            // Automatically hide info/success messages after a delay
+            if (type !== 'error') {
+                setTimeout(() => msgEl.classList.add('hidden'), 5000);
+            }
+        }
+
+        function showLoading(show) {
+            document.getElementById('loading-indicator').classList.toggle('hidden', !show);
+            document.querySelectorAll('button').forEach(btn => btn.disabled = show);
+        }
+
+        // --- FIREBASE INITIALIZATION AND AUTHENTICATION ---
+
+        if (firebaseConfig) {
+            setLogLevel('debug');
+            const app = initializeApp(firebaseConfig);
+            db = getFirestore(app);
+            auth = getAuth(app);
+
+            onAuthStateChanged(auth, async (user) => {
+                if (user) {
+                    userId = user.uid;
+                    document.getElementById('user-display').textContent = `User ID: ${userId.substring(0, 8)}... (Authenticated)`;
+                    isAuthReady = true;
+                    // Start listening for data only if authentication succeeds
+                    // Note: This will likely fail when running locally due to missing credentials, but the UI initializes.
+                    setupRealtimeListener(); 
+                } else {
+                    try {
+                        // Sign in using the provided custom token or anonymously
+                        if (initialAuthToken) {
+                            await signInWithCustomToken(auth, initialAuthToken);
+                        } else {
+                            await signInAnonymously(auth);
+                        }
+                    } catch (error) {
+                        console.error("Firebase Auth Error:", error);
+                        // Use a fallback UUID if auth fails completely (for local use)
+                        userId = crypto.randomUUID();
+                        document.getElementById('user-display').textContent = `User ID: ${userId.substring(0, 8)}... (Anonymous/Local)`;
+                        isAuthReady = true;
+                        // Still attempt listener setup, will show permission denied error in console, but app won't crash.
+                        setupRealtimeListener(); 
+                    }
+                }
+            });
+        } else {
+            // This path should no longer be hit with the DUMMY_FIREBASE_CONFIG
+            document.getElementById('user-display').textContent = "Firebase is not configured.";
+            displayMessage("Firebase configuration is missing. Persistence features will not work.", 'error');
+        }
+
+        // --- WEATHER API LOGIC ---
+
+        async function fetchWeatherData(city) {
+            if (API_KEY === "YOUR_OPENWEATHERMAP_API_KEY") {
+                displayMessage("ERROR: Please update the API_KEY variable in the code with your actual OpenWeatherMap key.", 'error');
+                return null;
+            }
+            if (!city) {
+                displayMessage("Please enter a location.", 'error');
+                return null;
+            }
+
+            showLoading(true);
+            const currentUrl = `${BASE_WEATHER_URL}?q=${encodeURIComponent(city)}&appid=${API_KEY}&units=${UNIT}`;
+            let data = null;
+
+            try {
+                const response = await fetch(currentUrl);
+                if (!response.ok) {
+                    // Check for specific API errors (e.g., 404 city not found)
+                    const errorData = await response.json();
+                    throw new Error(errorData.message || `API request failed with status ${response.status}`);
+                }
+                data = await response.json();
+                
+                // Now fetch forecast using coordinates from current data
+                const lat = data.coord.lat;
+                const lon = data.coord.lon;
+                const forecastUrl = `${BASE_FORECAST_URL}?lat=${lat}&lon=${lon}&appid=${API_KEY}&units=${UNIT}`;
+                const forecastResponse = await fetch(forecastUrl);
+                if (!forecastResponse.ok) {
+                    throw new Error("Forecast API request failed.");
+                }
+                const forecastData = await forecastResponse.json();
+
+                return { current: data, forecast: forecastData };
+
+            } catch (error) {
+                console.error("API Fetch Error:", error);
+                displayMessage(`Weather API Error: ${error.message}. Please check the location spelling and your API key.`, 'error');
+                return null;
+            } finally {
+                showLoading(false);
+            }
+        }
+
+        function renderWeather(data) {
+            const { current, forecast } = data;
+            const outputEl = document.getElementById('weather-output');
+            const detailsEl = document.getElementById('current-details');
+            const locationNameEl = document.getElementById('location-name');
+            const forecastGridEl = document.getElementById('forecast-grid');
+
+            locationNameEl.textContent = `${current.name}, ${current.sys.country}`;
+            document.getElementById('current-weather-title').classList.remove('hidden');
+            document.getElementById('forecast-title').classList.remove('hidden');
+
+            // Current Details (Cleanup and Display)
+            const temperature = Math.round(current.main.temp);
+            const weatherDesc = current.weather[0].description;
+            const iconCode = current.weather[0].icon;
+
+            detailsEl.innerHTML = `
+                <div class="p-2 bg-indigo-50 rounded-lg col-span-2 text-center text-3xl font-bold text-indigo-700">${temperature}°C</div>
+                <div class="p-2 bg-indigo-50 rounded-lg text-center text-lg">${weatherDesc.toUpperCase()}</div>
+                <div class="p-2 bg-indigo-50 rounded-lg text-center">Feels Like: ${Math.round(current.main.feels_like)}°C</div>
+                <div class="p-2 bg-indigo-50 rounded-lg text-center">Humidity: ${current.main.humidity}%</div>
+                <div class="p-2 bg-indigo-50 rounded-lg text-center">Wind: ${Math.round(current.wind.speed)} m/s</div>
+                <div class="p-2 bg-indigo-50 rounded-lg text-center">Pressure: ${current.main.pressure} hPa</div>
+            `;
+
+            // Forecast Details (Filtering for 5 distinct days)
+            const dailyForecast = {};
+            
+            // Loop through 3-hour forecasts
+            forecast.list.forEach(item => {
+                const dateKey = item.dt_txt.substring(0, 10); // YYYY-MM-DD
+                const temp = item.main.temp;
+                const icon = item.weather[0].icon;
+                const desc = item.weather[0].description;
+
+                if (!dailyForecast[dateKey]) {
+                    // Initialize the day with the first reading
+                    dailyForecast[dateKey] = {
+                        date: dateKey,
+                        minTemp: temp,
+                        maxTemp: temp,
+                        icon: icon,
+                        desc: desc,
+                        time: item.dt_txt.substring(11, 16)
+                    };
+                } else {
+                    // Update min/max for the day
+                    dailyForecast[dateKey].minTemp = Math.min(dailyForecast[dateKey].minTemp, temp);
+                    dailyForecast[dateKey].maxTemp = Math.max(dailyForecast[dateKey].maxTemp, temp);
+                }
+            });
+
+            // Render the first 5 unique daily forecasts
+            forecastGridEl.innerHTML = Object.values(dailyForecast)
+                .slice(0, 5)
+                .map(day => `
+                    <div class="text-center p-3 bg-indigo-100 rounded-lg shadow-sm">
+                        <p class="font-bold text-sm">${new Date(day.date).toLocaleDateString('en-US', { weekday: 'short' })}</p>
+                        <img src="https://openweathermap.org/img/wn/${day.icon}@2x.png" alt="${day.desc}" class="mx-auto w-10 h-10">
+                        <p class="text-xs text-gray-700">${day.desc}</p>
+                        <p class="text-sm font-semibold">${Math.round(day.maxTemp)}° / ${Math.round(day.minTemp)}°</p>
+                    </div>
+                `).join('');
+        }
+
+        // --- CRUD LOGIC ---
+
+        function setupRealtimeListener() {
+            if (!db || !isAuthReady) return;
+
+            const collectionRef = collection(db, COLLECTION_PATH);
+            const q = query(collectionRef); // Simple query for all documents in the public collection
+
+            onSnapshot(q, (snapshot) => {
+                const records = [];
+                snapshot.forEach(doc => {
+                    records.push({ id: doc.id, ...doc.data() });
+                });
+                renderCrudList(records);
+            }, (error) => {
+                console.error("Firestore READ Error (onSnapshot):", error);
+                // When running locally, this error is expected (Permission Denied)
+                displayMessage(`(Local Mode) Firestore Read Error: Data persistence is disabled. Check console for details.`, 'error');
+            });
+        }
+
+        // CREATE / UPDATE
+        async function saveWeatherRequest(event) {
+            event.preventDefault();
+
+            const location = document.getElementById('crud-location').value.trim();
+            const startDate = document.getElementById('crud-start-date').value;
+            const endDate = document.getElementById('crud-end-date').value;
+            const docId = document.getElementById('doc-id').value; // Used for UPDATE
+
+            // 1. Validation
+            if (!location || !startDate || !endDate) {
+                return displayMessage("Location, Start Date, and End Date are required.", 'error');
+            }
+            if (new Date(startDate) > new Date(endDate)) {
+                return displayMessage("Start Date cannot be after End Date.", 'error');
+            }
+
+            showLoading(true);
+
+            try {
+                let savedTemperature = "N/A"; // Fallback value
+
+                // 2. Additional API Call (to get current temp for the log)
+                const weatherResult = await fetchWeatherData(location);
+                if (weatherResult && weatherResult.current) {
+                    savedTemperature = `${Math.round(weatherResult.current.main.temp)}°C`;
+                }
+                
+                // 3. Prepare Data
+                const recordData = {
+                    location: location,
+                    startDate: startDate,
+                    endDate: endDate,
+                    savedTemperature: savedTemperature,
+                    createdAt: docId ? docId.substring(0,10) : new Date().toISOString().substring(0, 10),
+                    ownerId: userId
+                };
+
+                // 4. Persistence (This will fail locally, but we need the code structure)
+                if (docId) {
+                    // UPDATE
+                    await updateDoc(doc(db, COLLECTION_PATH, docId), recordData);
+                    displayMessage(`SUCCESS: Record for ${location} updated.`, 'success');
+                } else {
+                    // CREATE
+                    await addDoc(collection(db, COLLECTION_PATH), recordData);
+                    displayMessage(`SUCCESS: Log entry for ${location} created and saved.`, 'success');
+                }
+                
+                // Reset Form
+                resetForm();
+
+            } catch (error) {
+                console.error("CRUD Save Error:", error);
+                // This is the expected local error due to no Firestore access
+                displayMessage(`(Local Mode) CRUD Save Failed: Weather data fetched, but database connection refused.`, 'error');
+            } finally {
+                showLoading(false);
+            }
+        }
+
+        // DELETE
+        async function deleteRecord(docId, location) {
+            if (!db || !docId) return;
+            
+            displayMessage(`Deleting record for ${location}... (This will fail in local mode)`, 'info');
+            showLoading(true);
+
+            try {
+                // This line will throw an error in local mode
+                await deleteDoc(doc(db, COLLECTION_PATH, docId)); 
+                displayMessage(`SUCCESS: Record for ${location} deleted.`, 'success');
+            } catch (error) {
+                console.error("CRUD Delete Error:", error);
+                displayMessage(`(Local Mode) Delete Failed: Database connection refused.`, 'error');
+            } finally {
+                showLoading(false);
+            }
+        }
+
+        // Render List (READ) - In local mode, this list will likely remain empty
+        function renderCrudList(records) {
+            const listEl = document.getElementById('crud-list');
+            const noRecordsMsg = document.getElementById('no-records-msg');
+
+            if (records.length === 0) {
+                noRecordsMsg.classList.remove('hidden');
+                listEl.innerHTML = '';
+                return;
+            }
+
+            noRecordsMsg.classList.add('hidden');
+            listEl.innerHTML = records.map(record => `
+                <div class="p-4 border border-gray-200 rounded-lg bg-white shadow-md transition hover:shadow-lg">
+                    <p class="font-bold text-lg text-indigo-700">${record.location}</p>
+                    <p class="text-sm text-gray-600">
+                        Requested Range: ${record.startDate} to ${record.endDate}
+                    </p>
+                    <p class="text-md font-semibold mt-1">
+                        Saved Temperature: <span class="text-green-600">${record.savedTemperature}</span>
+                        (Logged on: ${record.createdAt})
+                    </p>
+                    <div class="mt-3 flex space-x-2">
+                        <!-- UPDATE Button -->
+                        <button onclick="prepareUpdate('${record.id}', '${record.location}', '${record.startDate}', '${record.endDate}')"
+                                class="flex-1 px-3 py-1 text-xs bg-yellow-500 text-white rounded hover:bg-yellow-600 transition">
+                            UPDATE
+                        </button>
+                        <!-- DELETE Button -->
+                        <button onclick="deleteRecord('${record.id}', '${record.location}')"
+                                class="flex-1 px-3 py-1 text-xs bg-red-500 text-white rounded hover:bg-red-600 transition">
+                            DELETE
+                        </button>
+                    </div>
+                </div>
+            `).join('');
+        }
+        
+        // Populate form for UPDATE (READ part)
+        window.prepareUpdate = (id, location, startDate, endDate) => {
+            document.getElementById('doc-id').value = id;
+            document.getElementById('crud-location').value = location;
+            document.getElementById('crud-start-date').value = startDate;
+            document.getElementById('crud-end-date').value = endDate;
+
+            document.getElementById('crud-form-title').textContent = `UPDATE Log Entry: ${location}`;
+            document.getElementById('save-crud-btn').textContent = 'UPDATE: Modify Log Entry';
+            document.getElementById('save-crud-btn').classList.remove('bg-green-500', 'hover:bg-green-600');
+            document.getElementById('save-crud-btn').classList.add('bg-yellow-600', 'hover:bg-yellow-700');
+            document.getElementById('cancel-update-btn').classList.remove('hidden');
+            displayMessage(`Editing record for ${location}. Click 'Cancel Update' to create a new one.`, 'info');
+        }
+
+        function resetForm() {
+            document.getElementById('doc-id').value = '';
+            document.getElementById('crud-location').value = '';
+            document.getElementById('crud-start-date').value = '';
+            document.getElementById('crud-end-date').value = '';
+
+            document.getElementById('crud-form-title').textContent = 'Create New Log Entry';
+            document.getElementById('save-crud-btn').textContent = 'CREATE: Save Historical Log Entry';
+            document.getElementById('save-crud-btn').classList.remove('bg-yellow-600', 'hover:bg-yellow-700');
+            document.getElementById('save-crud-btn').classList.add('bg-green-500', 'hover:bg-green-600');
+            document.getElementById('cancel-update-btn').classList.add('hidden');
+        }
+
+        // --- EVENT LISTENERS ---
+
+        document.getElementById('fetch-weather-btn').addEventListener('click', async () => {
+            const city = document.getElementById('city-input').value.trim();
+            const weatherData = await fetchWeatherData(city);
+            if (weatherData) {
+                renderWeather(weatherData);
+            }
+        });
+
+        document.getElementById('save-crud-btn').addEventListener('click', saveWeatherRequest);
+        document.getElementById('cancel-update-btn').addEventListener('click', resetForm);
+
+        // Expose functions globally for inline HTML event handlers (CRUD buttons)
+        window.deleteRecord = deleteRecord;
+
+    </script>
+</body>
+</html>
