@@ -22,10 +22,27 @@ dotenv.config();
 const app = express();
 
 /**
- * Enable Cross-Origin Resource Sharing (CORS)
- * This allows the frontend (React/Vite) to call this backend API.
+ * ------------------------------------------------------------
+ * FIXED CORS CONFIGURATION (Render + Vercel Compatible)
+ * ------------------------------------------------------------
+ * Default `app.use(cors())` often fails on Render because the
+ * frontend domain needs explicit CORS headers.
+ *
+ * Here we allow ALL origins ("*") because this project is a
+ * public API used only for demo purposes.
+ *
+ * If you later want to restrict to your Vercel domain, replace:
+ *   origin: "*"
+ * with:
+ *   origin: ["https://your-frontend.vercel.app"]
  */
-app.use(cors());
+app.use(
+  cors({
+    origin: "*", // Allow all origins
+    methods: ["GET"],
+    allowedHeaders: ["Content-Type"],
+  })
+);
 
 /**
  * Parse incoming JSON request bodies
@@ -41,7 +58,7 @@ const PORT = process.env.PORT || 4000;
  * Health Check Route
  * ------------------------------------------------------------
  * Used to verify whether the server is running.
- * Example: GET http://localhost:4000/api/health
+ * Example: GET https://your-backend.onrender.com/api/health
  */
 app.get("/api/health", (_, res) => res.json({ ok: true }));
 
@@ -64,14 +81,14 @@ app.get("/api/weather", async (req, res) => {
 
     if (!city) {
       return res.status(400).json({
-        error: "Query parameter 'city' is required."
+        error: "Query parameter 'city' is required.",
       });
     }
 
     // Reject extremely long/invalid city names
     if (city.length > 80) {
       return res.status(400).json({
-        error: "City query too long."
+        error: "City query too long.",
       });
     }
 
@@ -83,7 +100,7 @@ app.get("/api/weather", async (req, res) => {
     const geo = await geocode(city);
     if (!geo) {
       return res.status(404).json({
-        error: "Location not found."
+        error: "Location not found.",
       });
     }
 
@@ -103,7 +120,7 @@ app.get("/api/weather", async (req, res) => {
      */
     res.json({
       location: geo,
-      weather
+      weather,
     });
   } catch (err) {
     console.error("Server error:", err?.message || err);
@@ -113,7 +130,7 @@ app.get("/api/weather", async (req, res) => {
      * Do NOT expose internal server messages to clients.
      */
     res.status(500).json({
-      error: "Server error. Try again later."
+      error: "Server error. Try again later.",
     });
   }
 });
