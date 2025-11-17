@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <!--
+      ================================================================
+      Weather App - Frontend Root HTML
+      ================================================================
+      This file serves as the root HTML container for the Vite + React app.
+      React mounts into the #root div injected at runtime.
+
+      Notes:
+      - Vite handles script bundling, module loading, and dev server.
+      - <script type="module"> enables ES module imports.
+      - No styling here; all CSS is handled via src/index.css.
+      ================================================================
+    -->
+
+    <meta charset="utf-8" />
+
+    <!-- Mobile responsiveness -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+    <title>Weather App</title>
+  </head>
+
+  <body>
+    <!-- React injects the UI here -->
+    <div id="root"></div>
+
+    <!-- Entry script (compiled and served by Vite) -->
+    <script type="module" src="/src/main.jsx"></script>
+  </body>
+</html>
